@@ -1,0 +1,626 @@
+openapi: "3.0.3"
+info:
+  title: Ledger API
+  description: |
+    Multi-currency ledger with support for deposits, transfers, and balance
+    tracking.  Authenticate via JWT — call `POST /auth/login` with your
+    username/password, then pass the returned `access_token` in the
+    `Authorization: Bearer <token>` header.
+
+    Rate limits are enforced per IP.  Endpoints that accept an
+    `Idempotency-Key` header (deposits and transfers) are exempt from rate
+    limits — see individual endpoint docs for details.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:5001/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRegister"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserLogin"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Invalid credentials
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh an expired access token
+      description: Send the *refresh* token (not the access token) in the `Authorization` header.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: New access token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+        "401":
+          description: Invalid or missing refresh token
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the authenticated user's profile
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: Invalid or missing access token
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /accounts:
+    post:
+      tags: [Accounts]
+      summary: Create a new account
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountCreate"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "401":
+          description: Invalid or missing access token
+        "429":
+          $ref: "#/components/responses/RateLimit"
+    get:
+      tags: [Accounts]
+      summary: List all accounts for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountResponse"
+        "401":
+          description: Invalid or missing access token
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /accounts/{account_id}/balance:
+    get:
+      tags: [Accounts]
+      summary: Get the balance of a specific account
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Current balance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalanceResponse"
+        "403":
+          description: Forbidden — account belongs to another user
+        "401":
+          description: Invalid or missing access token
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /accounts/{account_id}/transactions:
+    get:
+      tags: [Accounts]
+      summary: List transactions and ledger entries for an account
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated list of transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+        "403":
+          description: Forbidden — account belongs to another user
+        "401":
+          description: Invalid or missing access token
+        "429":
+          $ref: "#/components/responses/RateLimit"
+
+  /deposits:
+    post:
+      tags: [Deposits]
+      summary: Initiate a two-phase deposit
+      description: |
+        Creates a PENDING transaction and notifies the payment provider.
+        The provider will call `POST /payments/webhook` to complete or fail
+        the deposit asynchronously.  This endpoint is idempotent — provide
+        an `Idempotency-Key` header to safely retry.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DepositInitiateRequest"
+      responses:
+        "202":
+          description: Deposit initiation accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DepositInitiateResponse"
+        "403":
+          description: Forbidden — account belongs to another user
+        "401":
+          description: Invalid or missing access token
+
+  /transfers:
+    post:
+      tags: [Transfers]
+      summary: Execute an account-to-account transfer
+      description: |
+        Transfers funds between two accounts (both must belong to the
+        authenticated user).  Idempotent — provide an `Idempotency-Key`
+        header to safely retry.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferRequest"
+      responses:
+        "201":
+          description: Transfer completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransferResponse"
+        "403":
+          description: Forbidden — source account belongs to another user
+        "401":
+          description: Invalid or missing access token
+        "422":
+          description: Insufficient funds or validation error
+
+  /payments/webhook:
+    post:
+      tags: [Webhooks]
+      summary: Receive payment provider callbacks
+      description: |
+        Called by the payment provider (e.g. mock provider) to notify
+        the platform of deposit outcome.  Accepts `deposit.completed`
+        and `deposit.failed` event types.  When `WEBHOOK_SECRET` is
+        configured the request must include a valid HMAC-SHA256 signature
+        in the `X-Webhook-Signature` header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentWebhookPayload"
+      responses:
+        "200":
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: received
+        "400":
+          description: Unknown event type or invalid payload
+        "401":
+          description: Missing or invalid webhook signature
+        "422":
+          description: Deposit confirmation or failure handling failed
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token obtained from `POST /auth/login`.
+
+  schemas:
+    # ─────────────────────────────── Auth ───────────────────────────────
+    UserRegister:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 80
+          example: alice
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          example: password123
+
+    UserLogin:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: alice
+        password:
+          type: string
+          example: password123
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+
+    # ───────────────────────────── Accounts ─────────────────────────────
+    AccountCreate:
+      type: object
+      required: [currency]
+      properties:
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          example: USD
+          description: Three-letter ISO currency code
+        name:
+          type: string
+          maxLength: 120
+          default: ""
+          example: My Savings
+
+    AccountResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        currency:
+          type: string
+        name:
+          type: string
+        is_system:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    BalanceResponse:
+      type: object
+      properties:
+        account_id:
+          type: integer
+        currency:
+          type: string
+        balance:
+          type: string
+          description: Decimal amount as string (e.g. "100.0000")
+
+    # ────────────────────────── Transactions ────────────────────────────
+    LedgerEntryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        account_id:
+          type: integer
+        transaction_id:
+          type: integer
+        amount:
+          type: string
+          description: Decimal string (e.g. "-30.0000" for debit)
+        entry_type:
+          type: string
+          enum: [DEBIT, CREDIT]
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED]
+        currency:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED]
+        description:
+          type: string
+          nullable: true
+        correlation_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerEntryResponse"
+
+    TransactionListResponse:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransactionResponse"
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+        pages:
+          type: integer
+
+    # ──────────────────────────── Deposits ──────────────────────────────
+    DepositInitiateRequest:
+      type: object
+      required: [account_id, amount, currency]
+      properties:
+        account_id:
+          type: integer
+          example: 10
+        amount:
+          type: string
+          description: Positive decimal amount as string
+          example: "100.00"
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          example: USD
+        description:
+          type: string
+          maxLength: 500
+          default: ""
+
+    DepositInitiateResponse:
+      type: object
+      properties:
+        transaction_id:
+          type: integer
+        status:
+          type: string
+          example: PENDING
+        account_id:
+          type: integer
+        amount:
+          type: string
+        currency:
+          type: string
+        provider_payment_id:
+          type: string
+          description: Reference from the payment provider (empty if unreachable)
+
+    # ─────────────────────────── Transfers ──────────────────────────────
+    TransferRequest:
+      type: object
+      required: [source_account_id, target_account_id, amount, currency]
+      properties:
+        source_account_id:
+          type: integer
+          example: 7
+        target_account_id:
+          type: integer
+          example: 10
+        amount:
+          type: string
+          description: Positive decimal amount as string
+          example: "50.00"
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          example: USD
+        description:
+          type: string
+          maxLength: 500
+          default: ""
+
+    TransferResponse:
+      type: object
+      properties:
+        transaction_id:
+          type: integer
+        status:
+          type: string
+          example: COMPLETED
+        source_account_id:
+          type: integer
+        target_account_id:
+          type: integer
+        amount:
+          type: string
+        currency:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    # ──────────────────────────── Webhooks ──────────────────────────────
+    PaymentWebhookPayload:
+      type: object
+      required: [event_id, event_type, reference_id, provider_reference, amount, currency, status, timestamp]
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier from the provider
+        event_type:
+          type: string
+          enum: [deposit.completed, deposit.failed]
+          description: Event type — instructs the action to take
+        reference_id:
+          type: string
+          description: Transaction ID from the initiate call (interpreted as integer)
+        provider_reference:
+          type: string
+          description: Provider-side payment reference
+        amount:
+          type: string
+          description: Decimal amount as string
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        status:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+          description: Event timestamp (rejected if older than tolerance)
+        metadata:
+          type: object
+          description: Extra provider data (reason for failure, etc.)
+
+  responses:
+    RateLimit:
+      description: Rate limit exceeded — try again later
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: Rate limit exceeded. Try again later.

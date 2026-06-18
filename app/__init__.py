@@ -57,6 +57,11 @@ def create_app(config_name: str = "default") -> Flask:
     # Register blueprints
     register_blueprints(app)
 
+    # Register documentation routes
+    from app.api.v1.docs import register_docs_routes
+
+    register_docs_routes(app)
+
     # Import models so Alembic detects them
     from app.models import (  # noqa: F401
         User,
