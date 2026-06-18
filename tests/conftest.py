@@ -1,6 +1,7 @@
 import pytest
 
 from app import create_app
+from app.extensions import cache as _cache
 from app.extensions import db as _db
 from app.services import event_bus
 
@@ -30,6 +31,16 @@ def reset_event_bus():
     event_bus.clear_handlers()
     yield
     event_bus.clear_handlers()
+
+
+@pytest.fixture(autouse=True)
+def clear_cache(app):
+    """Clear the cache between tests."""
+    with app.app_context():
+        _cache.clear()
+    yield
+    with app.app_context():
+        _cache.clear()
 
 
 @pytest.fixture()

@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 
 from app.api import register_blueprints
-from app.extensions import cors, db, jwt, migrate
+from app.extensions import cache, cors, db, jwt, migrate
 from app.middleware.correlation_id import register_correlation_id
 from app.middleware.error_handlers import register_error_handlers
 from app.middleware.request_logging import register_request_logging
@@ -18,6 +18,7 @@ def create_app(config_name: str = "default") -> Flask:
     migrate.init_app(app, db)
     jwt.init_app(app)
     cors.init_app(app)
+    cache.init_app(app)
 
     # JWT error handlers
     @jwt.expired_token_loader

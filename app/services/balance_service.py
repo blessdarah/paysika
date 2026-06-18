@@ -5,9 +5,13 @@ from sqlalchemy import func
 
 from app.domain.enums import Currency, EntryStatus
 from app.domain.money import Money
-from app.extensions import db
+from app.extensions import cache, db
 from app.models.balance_snapshot import BalanceSnapshot
 from app.models.ledger_entry import LedgerEntry
+
+
+def _balance_cache_key(account_id: int) -> str:
+    return f"balance:{account_id}"
 
 
 def get_balance(account_id: int, currency: str, use_lock: bool = False) -> Money:
@@ -15,7 +19,13 @@ def get_balance(account_id: int, currency: str, use_lock: bool = False) -> Money
 
     If use_lock=True, uses SELECT FOR UPDATE on the entries to prevent
     concurrent reads during transfers (pessimistic locking).
+    Cache is only used when use_lock=False (read-only path).
     """
+    if not use_lock:
+        cached = cache.get(_balance_cache_key(account_id))
+        if cached is not None:
+            return Money(Decimal(cached["amount"]), cached["currency"])
+
     # Find the latest snapshot for this account
     snapshot = (
         BalanceSnapshot.query
@@ -47,7 +57,22 @@ def get_balance(account_id: int, currency: str, use_lock: bool = False) -> Money
 
     delta = query.scalar() or Decimal("0")
     total = snapshot_balance + delta
-    return Money(total, currency)
+    result = Money(total, currency)
+
+    if not use_lock:
+        ttl = current_app.config.get("BALANCE_CACHE_TTL", 300)
+        cache.set(
+            _balance_cache_key(account_id),
+            {"amount": str(result.amount), "currency": currency},
+            timeout=ttl,
+        )
+
+    return result
+
+
+def invalidate_balance_cache(account_id: int) -> None:
+    """Delete the cached balance for an account."""
+    cache.delete(_balance_cache_key(account_id))
 
 
 def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:

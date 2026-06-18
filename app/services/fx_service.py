@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from flask import g
+from flask import current_app, g
 
 from app.domain.enums import (
     EntryStatus,
@@ -8,7 +8,7 @@ from app.domain.enums import (
     TransactionStatus,
     TransactionType,
 )
-from app.extensions import db
+from app.extensions import cache, db
 from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
@@ -35,15 +35,28 @@ _RATES = {
 }
 
 
+def _fx_cache_key(source: str, target: str) -> str:
+    return f"fx:{source}:{target}"
+
+
 def get_exchange_rate(source_currency: str, target_currency: str) -> Decimal:
     if source_currency == target_currency:
         return Decimal("1")
+
+    cached = cache.get(_fx_cache_key(source_currency, target_currency))
+    if cached is not None:
+        return Decimal(cached)
+
     key = (source_currency, target_currency)
     rate = _RATES.get(key)
     if rate is None:
         raise CurrencyMismatchError(
             f"No exchange rate available for {source_currency} -> {target_currency}"
         )
+
+    ttl = current_app.config.get("FX_RATE_CACHE_TTL", 3600)
+    cache.set(_fx_cache_key(source_currency, target_currency), str(rate), timeout=ttl)
+
     return rate
 
 
@@ -153,4 +166,10 @@ def execute_fx_transfer(
     ))
 
     db.session.flush()
+
+    balance_service.invalidate_balance_cache(source_account_id)
+    balance_service.invalidate_balance_cache(target_account_id)
+    balance_service.invalidate_balance_cache(fx_source.id)
+    balance_service.invalidate_balance_cache(fx_target.id)
+
     return txn

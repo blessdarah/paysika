@@ -12,7 +12,7 @@ from app.domain.events import DepositCompleted
 from app.extensions import db
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
-from app.services import account_service, event_bus
+from app.services import account_service, balance_service, event_bus
 from app.utils.exceptions import AccountNotFoundError, CurrencyMismatchError
 
 
@@ -81,6 +81,9 @@ def execute_deposit(
     db.session.add(debit_entry)
     db.session.add(credit_entry)
     db.session.flush()
+
+    balance_service.invalidate_balance_cache(account_id)
+    balance_service.invalidate_balance_cache(clearing_account.id)
 
     # Emit event
     event_bus.publish(DepositCompleted(

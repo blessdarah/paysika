@@ -126,6 +126,9 @@ def execute_transfer(
     db.session.add(credit_entry)
     db.session.flush()
 
+    balance_service.invalidate_balance_cache(source_account_id)
+    balance_service.invalidate_balance_cache(target_account_id)
+
     # Emit domain events
     if two_phase:
         event_bus.publish(FundsReserved(
@@ -162,6 +165,9 @@ def commit_transfer(transaction_id: int) -> Transaction:
     txn.status = TransactionStatus.COMPLETED.value
     db.session.flush()
 
+    balance_service.invalidate_balance_cache(txn.entries[0].account_id)
+    balance_service.invalidate_balance_cache(txn.entries[1].account_id)
+
     event_bus.publish(TransferCompleted(
         transaction_id=txn.id,
         source_account_id=txn.entries[0].account_id,
@@ -187,6 +193,9 @@ def cancel_transfer(transaction_id: int) -> Transaction:
         entry.status = EntryStatus.FAILED.value
     txn.status = TransactionStatus.FAILED.value
     db.session.flush()
+
+    balance_service.invalidate_balance_cache(txn.entries[0].account_id)
+    balance_service.invalidate_balance_cache(txn.entries[1].account_id)
 
     event_bus.publish(TransferFailed(
         transaction_id=txn.id,

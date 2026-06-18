@@ -24,6 +24,13 @@ class BaseConfig:
     SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "NGN", "XAF"]
     WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
+    # Cache configuration
+    CACHE_TYPE = "RedisCache"
+    CACHE_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    CACHE_KEY_PREFIX = "ledger:"
+    BALANCE_CACHE_TTL = int(os.getenv("BALANCE_CACHE_TTL", "300"))
+    FX_RATE_CACHE_TTL = int(os.getenv("FX_RATE_CACHE_TTL", "3600"))
+
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
@@ -36,6 +43,7 @@ class TestingConfig(BaseConfig):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=60)
+    CACHE_TYPE = "SimpleCache"
 
 
 class ProductionConfig(BaseConfig):
