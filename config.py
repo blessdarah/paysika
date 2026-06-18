@@ -38,6 +38,12 @@ class BaseConfig:
     # Async email configuration
     EMAIL_BACKGROUND = os.getenv("EMAIL_BACKGROUND", "false").lower() == "true"
 
+    # Rate limiting configuration
+    RATELIMIT_STORAGE_URL = os.getenv("RATELIMIT_STORAGE_URL", "memory://")
+    RATELIMIT_STRATEGY = os.getenv("RATELIMIT_STRATEGY", "fixed-window")
+    RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day; 50 per hour")
+    RATELIMIT_HEADERS_ENABLED = True
+
     # Cache configuration
     CACHE_TYPE = "RedisCache"
     CACHE_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -62,6 +68,7 @@ class TestingConfig(BaseConfig):
     CACHE_TYPE = "SimpleCache"
     MAIL_SUPPRESS_SEND = True
     FX_PROVIDER = "fallback"
+    RATELIMIT_ENABLED = False
 
 
 class ProductionConfig(BaseConfig):
@@ -71,7 +78,8 @@ class ProductionConfig(BaseConfig):
     @classmethod
     def init_app(cls):
         assert cls.SQLALCHEMY_DATABASE_URI, "DATABASE_URL must be set"
-        assert cls.SECRET_KEY != "change-me-in-production", "SECRET_KEY must be changed"
+        assert cls.SECRET_KEY != "change-me-in-production", "SECRET_KEY must be changed from the default"
+        assert cls.JWT_SECRET_KEY != "jwt-change-me", "JWT_SECRET_KEY must be changed from the default"
 
 
 config = {

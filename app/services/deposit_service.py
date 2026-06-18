@@ -60,7 +60,10 @@ def execute_deposit(
     _lock_accounts([account.id, clearing_account.id])
 
     # Create the transaction
-    correlation_id = getattr(g, "correlation_id", None) or Transaction.generate_correlation_id()
+    try:
+        correlation_id = g.correlation_id
+    except Exception:
+        correlation_id = Transaction.generate_correlation_id()
     txn = Transaction(
         type=TransactionType.DEPOSIT.value,
         status=TransactionStatus.COMPLETED.value,

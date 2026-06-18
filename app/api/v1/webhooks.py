@@ -4,6 +4,7 @@ import hmac
 from flask import current_app, jsonify, request
 
 from app.api.v1 import v1_bp
+from app.extensions import limiter
 from app.schemas.webhook import PaymentWebhookPayload
 from app.utils.decorators import validate_request
 
@@ -16,6 +17,7 @@ def _verify_hmac_signature(payload_bytes: bytes, signature: str, secret: str) ->
 
 
 @v1_bp.route("/payments/webhook", methods=["POST"])
+@limiter.limit("30 per minute")
 @validate_request(PaymentWebhookPayload)
 def payment_webhook(validated_data):
     secret = current_app.config.get("WEBHOOK_SECRET", "")

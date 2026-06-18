@@ -2,7 +2,7 @@ from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.api.v1 import v1_bp
-from app.extensions import db
+from app.extensions import db, limiter
 from app.schemas.account import AccountCreate, AccountResponse, BalanceResponse
 from app.schemas.transaction import TransactionListResponse, TransactionResponse, LedgerEntryResponse
 from app.services import account_service, balance_service, transaction_service
@@ -10,6 +10,7 @@ from app.utils.decorators import validate_request
 
 
 @v1_bp.route("/accounts", methods=["POST"])
+@limiter.limit("20 per minute")
 @jwt_required()
 @validate_request(AccountCreate)
 def create_account(validated_data):
@@ -24,6 +25,7 @@ def create_account(validated_data):
 
 
 @v1_bp.route("/accounts", methods=["GET"])
+@limiter.limit("30 per minute")
 @jwt_required()
 def list_accounts():
     user_id = int(get_jwt_identity())
@@ -35,6 +37,7 @@ def list_accounts():
 
 
 @v1_bp.route("/accounts/<int:account_id>/balance", methods=["GET"])
+@limiter.limit("60 per minute")
 @jwt_required()
 def get_balance(account_id):
     user_id = int(get_jwt_identity())
@@ -51,6 +54,7 @@ def get_balance(account_id):
 
 
 @v1_bp.route("/accounts/<int:account_id>/transactions", methods=["GET"])
+@limiter.limit("30 per minute")
 @jwt_required()
 def get_account_transactions(account_id):
     user_id = int(get_jwt_identity())

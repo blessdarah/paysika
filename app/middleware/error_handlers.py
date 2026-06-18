@@ -19,5 +19,5 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(500)
     def internal_error(error):
-        app.logger.error("Internal server error: %s", error)
+        app.logger.exception("Internal server error: %s", error)
         return jsonify({"error": "Internal server error"}), 500

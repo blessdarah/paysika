@@ -5,6 +5,10 @@ from app.models.base import LedgerBaseMixin
 class LedgerEntry(LedgerBaseMixin, db.Model):
     __tablename__ = "ledger_entries"
 
+    __table_args__ = (
+        db.Index("ix_ledger_account_status_id", "account_id", "status", "id"),
+    )
+
     account_id = db.Column(
         db.Integer, db.ForeignKey("accounts.id"), nullable=False, index=True
     )

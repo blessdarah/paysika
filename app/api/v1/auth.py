@@ -2,12 +2,14 @@ from flask import jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.api.v1 import v1_bp
+from app.extensions import limiter
 from app.schemas.user import UserLogin, UserRegister, UserResponse, TokenResponse
 from app.services import auth_service
 from app.utils.decorators import validate_request
 
 
 @v1_bp.route("/auth/register", methods=["POST"])
+@limiter.limit("3 per hour")
 @validate_request(UserRegister)
 def register(validated_data: UserRegister):
     user = auth_service.register_user(
@@ -19,6 +21,7 @@ def register(validated_data: UserRegister):
 
 
 @v1_bp.route("/auth/login", methods=["POST"])
+@limiter.limit("10 per minute")
 @validate_request(UserLogin)
 def login(validated_data: UserLogin):
     tokens = auth_service.login_user(
@@ -29,6 +32,7 @@ def login(validated_data: UserLogin):
 
 
 @v1_bp.route("/auth/refresh", methods=["POST"])
+@limiter.limit("10 per minute")
 @jwt_required(refresh=True)
 def refresh():
     identity = get_jwt_identity()
@@ -37,6 +41,7 @@ def refresh():
 
 
 @v1_bp.route("/auth/me", methods=["GET"])
+@limiter.limit("30 per minute")
 @jwt_required()
 def me():
     user_id = int(get_jwt_identity())

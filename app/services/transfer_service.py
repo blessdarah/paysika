@@ -91,7 +91,10 @@ def execute_transfer(
     txn_status = TransactionStatus.PENDING.value if two_phase else TransactionStatus.COMPLETED.value
 
     # Create transaction
-    correlation_id = getattr(g, "correlation_id", None) or Transaction.generate_correlation_id()
+    try:
+        correlation_id = g.correlation_id
+    except Exception:
+        correlation_id = Transaction.generate_correlation_id()
     txn = Transaction(
         type=TransactionType.TRANSFER.value,
         status=txn_status,

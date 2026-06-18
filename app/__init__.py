@@ -1,7 +1,7 @@
 from flask import Flask, jsonify
 
 from app.api import register_blueprints
-from app.extensions import cache, cors, db, jwt, mail, migrate
+from app.extensions import cache, cors, db, jwt, limiter, mail, migrate
 from app.middleware.correlation_id import register_correlation_id
 from app.middleware.error_handlers import register_error_handlers
 from app.middleware.request_logging import register_request_logging
@@ -11,7 +11,12 @@ from config import config
 
 def create_app(config_name: str = "default") -> Flask:
     app = Flask(__name__)
-    app.config.from_object(config[config_name])
+    config_cls = config[config_name]
+    app.config.from_object(config_cls)
+
+    # Run config-level initialization (e.g., production assertion checks)
+    if hasattr(config_cls, "init_app"):
+        config_cls.init_app()
 
     # Initialize extensions
     db.init_app(app)
@@ -20,6 +25,7 @@ def create_app(config_name: str = "default") -> Flask:
     cors.init_app(app)
     cache.init_app(app)
     mail.init_app(app)
+    limiter.init_app(app)
 
     # JWT error handlers
     @jwt.expired_token_loader
@@ -33,6 +39,11 @@ def create_app(config_name: str = "default") -> Flask:
     @jwt.unauthorized_loader
     def missing_token_callback(error):
         return jsonify({"error": "Authorization token required"}), 401
+
+    # Rate limit error handler
+    @app.errorhandler(429)
+    def ratelimit_handler(error):
+        return jsonify({"error": "Rate limit exceeded. Try again later."}), 429
 
     # Setup logging, error handlers, request logging, correlation IDs
     setup_logging(app)

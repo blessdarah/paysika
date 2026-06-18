@@ -6,10 +6,21 @@ import json
 from datetime import datetime, timezone
 
 
+class CorrelationIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            from flask import g
+            record.correlation_id = getattr(g, "correlation_id", "-")
+        except Exception:
+            record.correlation_id = "-"
+        return True
+
+
 class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "correlation_id": getattr(record, "correlation_id", "-"),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -24,6 +35,8 @@ class JSONFormatter(logging.Formatter):
 
 def setup_logging(app):
     log_level = getattr(logging, app.config.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+    app.logger.addFilter(CorrelationIdFilter())
 
     log_dir = os.path.join(app.root_path, "..", "logs")
     os.makedirs(log_dir, exist_ok=True)
