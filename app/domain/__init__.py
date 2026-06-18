@@ -7,7 +7,6 @@ from app.domain.enums import (
 )
 from app.domain.events import (
     DepositCompleted,
-    FundsReserved,
     TransferCompleted,
     TransferFailed,
 )
@@ -20,7 +19,6 @@ __all__ = [
     "TransactionStatus",
     "TransactionType",
     "Money",
-    "FundsReserved",
     "TransferCompleted",
     "TransferFailed",
     "DepositCompleted",

@@ -1,3 +1,6 @@
+import click
+from datetime import datetime, timezone, timedelta
+
 from flask import Flask, jsonify
 
 from app.api import register_blueprints
@@ -72,5 +75,18 @@ def create_app(config_name: str = "default") -> Flask:
     from app.services.notification_service import register_handlers
 
     register_handlers()
+
+    @app.cli.command("cleanup-idempotency")
+    @click.option("--hours", default=72, help="Delete records older than N hours")
+    def cleanup_idempotency(hours):
+        """Delete old IdempotencyRecord rows."""
+        from app.models.idempotency_record import IdempotencyRecord
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        deleted = IdempotencyRecord.query.filter(
+            IdempotencyRecord.created_at < cutoff
+        ).delete()
+        db.session.commit()
+        click.echo(f"Deleted {deleted} idempotency records older than {hours} hours")
 
     return app

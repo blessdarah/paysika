@@ -5,15 +5,6 @@ from decimal import Decimal
 
 
 @dataclass(frozen=True)
-class FundsReserved:
-    transaction_id: int
-    source_account_id: int
-    target_account_id: int
-    amount: Decimal
-    currency: str
-
-
-@dataclass(frozen=True)
 class TransferCompleted:
     transaction_id: int
     source_account_id: int

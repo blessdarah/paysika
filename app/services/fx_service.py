@@ -181,9 +181,14 @@ def execute_fx_transfer(
 
     db.session.flush()
 
-    balance_service.invalidate_balance_cache(source_account_id)
-    balance_service.invalidate_balance_cache(target_account_id)
-    balance_service.invalidate_balance_cache(fx_source.id)
-    balance_service.invalidate_balance_cache(fx_target.id)
+    balance_service.refresh_balance_cache(source_account_id, source_currency)
+    balance_service.refresh_balance_cache(fx_source.id, source_currency)
+    balance_service.refresh_balance_cache(fx_target.id, target_currency)
+    balance_service.refresh_balance_cache(target_account_id, target_currency)
+
+    balance_service.maybe_create_snapshot(source_account_id)
+    balance_service.maybe_create_snapshot(fx_source.id)
+    balance_service.maybe_create_snapshot(fx_target.id)
+    balance_service.maybe_create_snapshot(target_account_id)
 
     return txn

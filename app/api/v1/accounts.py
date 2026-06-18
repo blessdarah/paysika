@@ -1,4 +1,4 @@
-from flask import jsonify, request
+from flask import current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.api.v1 import v1_bp
@@ -63,7 +63,10 @@ def get_account_transactions(account_id):
         return jsonify({"error": "Forbidden"}), 403
 
     page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 20, type=int)
+    per_page = min(
+        request.args.get("per_page", current_app.config["ITEMS_PER_PAGE"], type=int),
+        current_app.config["MAX_PER_PAGE"],
+    )
 
     result = transaction_service.get_account_transactions(account_id, page, per_page)
 

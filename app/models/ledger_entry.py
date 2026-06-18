@@ -7,6 +7,11 @@ class LedgerEntry(LedgerBaseMixin, db.Model):
 
     __table_args__ = (
         db.Index("ix_ledger_account_status_id", "account_id", "status", "id"),
+        db.Index(
+            "ix_ledger_account_created_desc",
+            "account_id",
+            db.text("created_at DESC"),
+        ),
     )
 
     account_id = db.Column(

@@ -10,6 +10,7 @@ from app.domain.enums import (
 )
 from app.domain.events import DepositCompleted
 from app.extensions import db
+from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
 from app.services import account_service, balance_service, event_bus
@@ -98,8 +99,11 @@ def execute_deposit(
     db.session.add(credit_entry)
     db.session.flush()
 
-    balance_service.invalidate_balance_cache(account_id)
-    balance_service.invalidate_balance_cache(clearing_account.id)
+    balance_service.refresh_balance_cache(account_id, currency)
+    balance_service.refresh_balance_cache(clearing_account.id, currency)
+
+    balance_service.maybe_create_snapshot(account_id)
+    balance_service.maybe_create_snapshot(clearing_account.id)
 
     # Emit event
     event_bus.publish(DepositCompleted(

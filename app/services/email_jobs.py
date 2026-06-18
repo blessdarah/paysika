@@ -21,10 +21,5 @@ def send_email(subject: str, recipients: list[str], body: str) -> None:
         from app.extensions import mail
 
         msg = Message(subject=subject, recipients=recipients, body=body)
-        try:
-            mail.send(msg)
-            logger.info("Email sent: subject=%r recipients=%s", subject, recipients)
-        except Exception:
-            logger.exception(
-                "Failed to send email: subject=%r recipients=%s", subject, recipients
-            )
+        mail.send(msg)
+        logger.info("Email sent: subject=%r recipients=%s", subject, recipients)

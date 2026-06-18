@@ -79,6 +79,12 @@ def invalidate_balance_cache(account_id: int) -> None:
     cache.delete(_balance_cache_key(account_id))
 
 
+def refresh_balance_cache(account_id: int, currency: str) -> None:
+    """Delete cache then immediately recompute and store the balance (write-through)."""
+    cache.delete(_balance_cache_key(account_id))
+    get_balance(account_id, currency)
+
+
 def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
     """Create a balance snapshot if the number of entries since last snapshot exceeds threshold."""
     threshold = current_app.config.get("LEDGER_SNAPSHOT_THRESHOLD", 100)

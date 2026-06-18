@@ -8,19 +8,14 @@ from app.domain.enums import (
     TransactionStatus,
     TransactionType,
 )
-from app.domain.events import FundsReserved, TransferCompleted, TransferFailed
+from app.domain.events import TransferCompleted, TransferFailed
 from app.domain.money import Money
 from app.extensions import db
 from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
 from app.services import balance_service, event_bus
-from app.utils.exceptions import (
-    AccountNotFoundError,
-    CurrencyMismatchError,
-    InsufficientFundsError,
-    InvalidTransactionStateError,
-)
+from app.utils.exceptions import AccountNotFoundError, CurrencyMismatchError, InsufficientFundsError
 
 
 def execute_transfer(
@@ -30,7 +25,6 @@ def execute_transfer(
     currency: str,
     description: str = "",
     idempotency_key: str | None = None,
-    two_phase: bool = False,
 ) -> Transaction:
     """Execute a double-entry transfer between two accounts.
 
@@ -86,10 +80,6 @@ def execute_transfer(
             f"Insufficient funds: balance={balance.amount}, required={amount}"
         )
 
-    # Determine entry status based on phase
-    entry_status = EntryStatus.PENDING.value if two_phase else EntryStatus.SUCCESS.value
-    txn_status = TransactionStatus.PENDING.value if two_phase else TransactionStatus.COMPLETED.value
-
     # Create transaction
     try:
         correlation_id = g.correlation_id
@@ -97,7 +87,7 @@ def execute_transfer(
         correlation_id = Transaction.generate_correlation_id()
     txn = Transaction(
         type=TransactionType.TRANSFER.value,
-        status=txn_status,
+        status=TransactionStatus.COMPLETED.value,
         idempotency_key=idempotency_key,
         correlation_id=correlation_id,
         description=description,
@@ -111,7 +101,7 @@ def execute_transfer(
         transaction_id=txn.id,
         amount=-amount,
         entry_type=EntryType.DEBIT.value,
-        status=entry_status,
+        status=EntryStatus.SUCCESS.value,
         currency=currency,
     )
 
@@ -121,7 +111,7 @@ def execute_transfer(
         transaction_id=txn.id,
         amount=amount,
         entry_type=EntryType.CREDIT.value,
-        status=entry_status,
+        status=EntryStatus.SUCCESS.value,
         currency=currency,
     )
 
@@ -129,84 +119,19 @@ def execute_transfer(
     db.session.add(credit_entry)
     db.session.flush()
 
-    balance_service.invalidate_balance_cache(source_account_id)
-    balance_service.invalidate_balance_cache(target_account_id)
+    balance_service.refresh_balance_cache(source_account_id, currency)
+    balance_service.refresh_balance_cache(target_account_id, currency)
 
-    # Emit domain events
-    if two_phase:
-        event_bus.publish(FundsReserved(
-            transaction_id=txn.id,
-            source_account_id=source_account_id,
-            target_account_id=target_account_id,
-            amount=amount,
-            currency=currency,
-        ))
-    else:
-        event_bus.publish(TransferCompleted(
-            transaction_id=txn.id,
-            source_account_id=source_account_id,
-            target_account_id=target_account_id,
-            amount=amount,
-            currency=currency,
-        ))
+    balance_service.maybe_create_snapshot(source_account_id)
+    balance_service.maybe_create_snapshot(target_account_id)
 
-    return txn
-
-
-def commit_transfer(transaction_id: int) -> Transaction:
-    """Phase 2: Transition PENDING entries to SUCCESS."""
-    txn = db.session.get(Transaction, transaction_id)
-    if txn is None:
-        raise AccountNotFoundError(f"Transaction {transaction_id} not found")
-    if txn.status != TransactionStatus.PENDING.value:
-        raise InvalidTransactionStateError(
-            f"Transaction {transaction_id} is not in PENDING state"
-        )
-
-    for entry in txn.entries:
-        entry.status = EntryStatus.SUCCESS.value
-    txn.status = TransactionStatus.COMPLETED.value
-    db.session.flush()
-
-    balance_service.invalidate_balance_cache(txn.entries[0].account_id)
-    balance_service.invalidate_balance_cache(txn.entries[1].account_id)
-
+    # Emit domain event
     event_bus.publish(TransferCompleted(
         transaction_id=txn.id,
-        source_account_id=txn.entries[0].account_id,
-        target_account_id=txn.entries[1].account_id,
-        amount=abs(txn.entries[0].amount),
-        currency=txn.entries[0].currency,
-    ))
-
-    return txn
-
-
-def cancel_transfer(transaction_id: int) -> Transaction:
-    """Cancel a PENDING transfer by marking entries as FAILED."""
-    txn = db.session.get(Transaction, transaction_id)
-    if txn is None:
-        raise AccountNotFoundError(f"Transaction {transaction_id} not found")
-    if txn.status != TransactionStatus.PENDING.value:
-        raise InvalidTransactionStateError(
-            f"Transaction {transaction_id} is not in PENDING state"
-        )
-
-    for entry in txn.entries:
-        entry.status = EntryStatus.FAILED.value
-    txn.status = TransactionStatus.FAILED.value
-    db.session.flush()
-
-    balance_service.invalidate_balance_cache(txn.entries[0].account_id)
-    balance_service.invalidate_balance_cache(txn.entries[1].account_id)
-
-    event_bus.publish(TransferFailed(
-        transaction_id=txn.id,
-        source_account_id=txn.entries[0].account_id,
-        target_account_id=txn.entries[1].account_id,
-        amount=abs(txn.entries[0].amount),
-        currency=txn.entries[0].currency,
-        reason="Transfer cancelled",
+        source_account_id=source_account_id,
+        target_account_id=target_account_id,
+        amount=amount,
+        currency=currency,
     ))
 
     return txn

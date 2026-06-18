@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 
 import json
@@ -50,6 +51,12 @@ def setup_logging(app):
     file_handler.setLevel(log_level)
 
     app.logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(JSONFormatter())
+    stream_handler.setLevel(log_level)
+    app.logger.addHandler(stream_handler)
+
     app.logger.setLevel(log_level)
 
     logging.getLogger("werkzeug").setLevel(logging.WARNING)

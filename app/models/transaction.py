@@ -7,6 +7,10 @@ from app.models.base import LedgerBaseMixin
 class Transaction(LedgerBaseMixin, db.Model):
     __tablename__ = "transactions"
 
+    __table_args__ = (
+        db.Index("ix_txn_status_created", "status", "created_at"),
+    )
+
     type = db.Column(db.String(20), nullable=False)
     status = db.Column(db.String(20), nullable=False, default="COMPLETED")
     idempotency_key = db.Column(db.String(255), unique=True, nullable=True, index=True)

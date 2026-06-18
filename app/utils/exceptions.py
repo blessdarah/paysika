@@ -37,11 +37,6 @@ class InsufficientFundsError(APIError):
         super().__init__(message, status_code=422)
 
 
-class InvalidTransactionStateError(APIError):
-    def __init__(self, message: str = "Invalid transaction state"):
-        super().__init__(message, status_code=409)
-
-
 class AccountNotFoundError(APIError):
     def __init__(self, message: str = "Account not found"):
         super().__init__(message, status_code=404)

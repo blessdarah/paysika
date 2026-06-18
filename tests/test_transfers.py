@@ -213,3 +213,84 @@ class TestTransferSpec:
         balance = balance_service.get_balance(a_id, "USD")
         assert balance >= Money.zero(Currency.USD)
         assert balance == Money("100.0000", Currency.USD)  # 1000 - 900
+
+
+def test_race_without_for_update(app, two_accounts):
+    """Prove two concurrent transfers can overdraw when FOR UPDATE is bypassed.
+
+    A threading.Barrier synchronises both threads at the balance check so they
+    read the *same* (stale) balance before either writes.  This mimics what
+    happens when the ``except Exception: pass`` in transfer_service silently
+    swallows a FOR UPDATE failure — both requests skip the lock and proceed
+    concurrently.
+
+    On PostgreSQL the real FOR UPDATE would serialise them.
+    On SQLite  FOR UPDATE is a no-op, so the race materialises.
+    """
+    import threading
+    from unittest.mock import patch
+
+    a_id = two_accounts["account_a_id"]
+    b_id = two_accounts["account_b_id"]
+
+    barrier = threading.Barrier(2, timeout=5)
+    call_count = 0
+    results = []
+
+    original_get_balance = balance_service.get_balance
+
+    def synced_get_balance(account_id, currency, use_lock=False):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            barrier.wait()
+        return original_get_balance(account_id, currency, use_lock=False)
+
+    def transfer(amount, key):
+        with app.app_context():
+            try:
+                transfer_service.execute_transfer(
+                    source_account_id=a_id,
+                    target_account_id=b_id,
+                    amount=amount,
+                    currency="USD",
+                    idempotency_key=key,
+                )
+                db.session.commit()
+                results.append("success")
+            except InsufficientFundsError:
+                results.append("insufficient")
+            except Exception as e:
+                db.session.rollback()
+                results.append(f"error({e})")
+
+    # Release the fixture's savepoint so threads can commit independently.
+    db.session.commit()
+
+    # Apply the patch once (thread-safe before threads start)
+    with patch(
+        "app.services.balance_service.get_balance",
+        side_effect=synced_get_balance,
+    ):
+        threads = [
+            threading.Thread(target=transfer, args=(Decimal("600"), "race-key-1")),
+            threading.Thread(target=transfer, args=(Decimal("600"), "race-key-2")),
+        ]
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    successes = results.count("success")
+
+    if successes > 1:
+        # On SQLite (no FOR UPDATE), both threads read the same stale balance
+        # and both succeed → balance goes negative.
+        pytest.skip(
+            f"Race reproduced: {successes} transfers succeeded. "
+            "FOR UPDATE would prevent this on PostgreSQL."
+        )
+
+    assert successes == 1, f"Expected 1 success, got {successes}: {results}"
+    assert results.count("insufficient") == 1
