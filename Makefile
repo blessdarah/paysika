@@ -82,8 +82,14 @@ docker-down: ## Stop and remove Docker containers
 docker-logs: ## Tail Docker container logs
 	docker compose logs -f
 
-docker-services: ## Start infrastructure services (db, redis, mailhog) for local development
-	docker compose up -d --wait db redis mailhog
+docker-services: ## Start infrastructure services (db, redis, mailhog, mock-provider) for local development
+	docker compose up -d --wait db redis mailhog mock-provider
+
+mock-provider-logs: ## Tail mock provider logs
+	docker compose logs -f mock-provider
+
+mock-provider-restart: ## Restart mock provider (clears in-memory state)
+	docker compose restart mock-provider
 
 # ---------------------------------------------------------------------------
 # Utilities

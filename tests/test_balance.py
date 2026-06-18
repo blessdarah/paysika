@@ -16,16 +16,15 @@ from app.services import balance_service
 @pytest.fixture()
 def user_with_account(app):
     """Create a user with a USD account."""
-    with app.app_context():
-        user = User(username="balanceuser", email="balance@test.com")
-        user.set_password("password123")
-        db.session.add(user)
-        db.session.flush()
+    user = User(username="balanceuser", email="balance@test.com")
+    user.set_password("password123")
+    db.session.add(user)
+    db.session.flush()
 
-        account = Account(user_id=user.id, currency="USD", name="Test Account")
-        db.session.add(account)
-        db.session.flush()
-        return {"user_id": user.id, "account_id": account.id}
+    account = Account(user_id=user.id, currency="USD", name="Test Account")
+    db.session.add(account)
+    db.session.flush()
+    return {"user_id": user.id, "account_id": account.id}
 
 
 def _create_entry(account_id, amount, entry_type, status=EntryStatus.SUCCESS.value):

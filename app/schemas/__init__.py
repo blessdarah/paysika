@@ -1,6 +1,11 @@
 from app.schemas.account import AccountCreate, AccountResponse, BalanceResponse
 from app.schemas.common import ErrorResponse, MessageResponse, PaginatedResponse
-from app.schemas.deposit import DepositRequest, DepositResponse
+from app.schemas.deposit import (
+    DepositInitiateRequest,
+    DepositInitiateResponse,
+    DepositRequest,
+    DepositResponse,
+)
 from app.schemas.transaction import (
     LedgerEntryResponse,
     TransactionListResponse,
@@ -29,4 +34,6 @@ __all__ = [
     "LedgerEntryResponse",
     "TransactionListResponse",
     "PaymentWebhookPayload",
+    "DepositInitiateRequest",
+    "DepositInitiateResponse",
 ]

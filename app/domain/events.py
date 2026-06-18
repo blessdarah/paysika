@@ -29,3 +29,20 @@ class DepositCompleted:
     account_id: int
     amount: Decimal
     currency: str
+
+
+@dataclass(frozen=True)
+class DepositInitiated:
+    transaction_id: int
+    account_id: int
+    amount: Decimal
+    currency: str
+
+
+@dataclass(frozen=True)
+class DepositFailed:
+    transaction_id: int
+    account_id: int
+    amount: Decimal
+    currency: str
+    reason: str

@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from flask import current_app, jsonify, request
 
 from app.api.v1 import v1_bp
-from app.extensions import limiter
+from app.extensions import db, limiter
 from app.schemas.webhook import PaymentWebhookPayload
+from app.services import deposit_service
 from app.utils.decorators import validate_request
 
 
@@ -34,7 +35,6 @@ def payment_webhook(validated_data):
         if not _verify_hmac_signature(request.get_data(), signature, secret):
             return jsonify({"error": "Invalid webhook signature"}), 401
 
-    # Replay protection: reject stale timestamps
     tolerance = current_app.config.get("WEBHOOK_TIMESTAMP_TOLERANCE", 300)
     try:
         ts = datetime.fromisoformat(validated_data.timestamp)
@@ -46,11 +46,44 @@ def payment_webhook(validated_data):
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid timestamp format"}), 400
 
-    current_app.logger.info(
-        "Webhook received: %s for transaction %s status=%s",
-        validated_data.event_type,
-        validated_data.transaction_id,
-        validated_data.status,
-    )
+    reference_id = validated_data.reference_id
+    try:
+        transaction_id = int(reference_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid reference_id — must be an integer"}), 400
+
+    if validated_data.event_type == "deposit.completed":
+        try:
+            txn = deposit_service.confirm_deposit(
+                transaction_id=transaction_id,
+                provider_reference=validated_data.provider_reference,
+            )
+            db.session.commit()
+            current_app.logger.info(
+                "Deposit confirmed: transaction=%s provider_ref=%s",
+                txn.id, validated_data.provider_reference,
+            )
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.exception("Deposit confirmation failed: %s", e)
+            return jsonify({"error": "Confirmation failed"}), 422
+
+    elif validated_data.event_type == "deposit.failed":
+        try:
+            txn = deposit_service.fail_deposit(
+                transaction_id=transaction_id,
+                reason=validated_data.metadata.get("reason", ""),
+            )
+            db.session.commit()
+            current_app.logger.info(
+                "Deposit failed: transaction=%s", txn.id,
+            )
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.exception("Deposit fail handling failed: %s", e)
+            return jsonify({"error": "Failed to record deposit failure"}), 422
+
+    else:
+        return jsonify({"error": f"Unknown event_type: {validated_data.event_type}"}), 400
 
     return jsonify({"status": "received"}), 200

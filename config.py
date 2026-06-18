@@ -37,6 +37,9 @@ class BaseConfig:
     WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
     WEBHOOK_TIMESTAMP_TOLERANCE = int(os.getenv("WEBHOOK_TIMESTAMP_TOLERANCE", "300"))
 
+    # Mock provider configuration
+    MOCK_PROVIDER_URL = os.getenv("MOCK_PROVIDER_URL", "http://localhost:8090")
+
     # Mail configuration
     MAIL_SERVER = os.getenv("MAIL_SERVER", "localhost")
     MAIL_PORT = int(os.getenv("MAIL_PORT", "1025"))
@@ -79,8 +82,8 @@ class DevelopmentConfig(BaseConfig):
 
 class TestingConfig(BaseConfig):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite://"
-    SQLALCHEMY_ENGINE_OPTIONS = {}  # SQLite does not support pool options
+    SQLALCHEMY_DATABASE_URI = os.getenv("TEST_DATABASE_URL", "sqlite://")
+    SQLALCHEMY_ENGINE_OPTIONS = {}
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=60)
     CACHE_TYPE = "SimpleCache"
     MAIL_SUPPRESS_SEND = True

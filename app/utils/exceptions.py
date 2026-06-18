@@ -45,3 +45,8 @@ class AccountNotFoundError(APIError):
 class CurrencyMismatchError(APIError):
     def __init__(self, message: str = "Currency mismatch"):
         super().__init__(message, status_code=422)
+
+
+class InvalidTransactionStateError(APIError):
+    def __init__(self, message: str = "Invalid transaction state"):
+        super().__init__(message, status_code=409)

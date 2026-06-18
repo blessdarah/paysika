@@ -5,8 +5,8 @@ from flask_mail import Message
 from rq import Queue, Retry
 from redis import Redis
 
-from app.domain.events import DepositCompleted, TransferCompleted, TransferFailed
-from app.extensions import mail
+from app.domain.events import DepositCompleted, DepositFailed, DepositInitiated, TransferCompleted, TransferFailed
+from app.extensions import db, mail
 from app.models.account import Account
 from app.services import event_bus
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_user_email(account_id: int) -> str | None:
-    account = Account.query.get(account_id)
+    account = db.session.get(Account, account_id)
     if account is None or account.user is None:
         return None
     return account.user.email
@@ -118,7 +118,27 @@ def _handle_deposit_completed(event: DepositCompleted) -> None:
         )
 
 
+def _handle_deposit_failed(event: DepositFailed) -> None:
+    logger.warning(
+        "NOTIFICATION: Deposit %s failed. Reason: %s",
+        event.transaction_id,
+        event.reason,
+    )
+    email = _get_user_email(event.account_id)
+    if email:
+        _send_email(
+            subject=f"Deposit {event.transaction_id} failed",
+            recipients=[email],
+            body=(
+                f"Deposit {event.transaction_id} has failed.\n\n"
+                f"Amount: {event.amount} {event.currency}\n"
+                f"Reason: {event.reason}\n"
+            ),
+        )
+
+
 def register_handlers() -> None:
     event_bus.subscribe(TransferCompleted, _handle_transfer_completed)
     event_bus.subscribe(TransferFailed, _handle_transfer_failed)
     event_bus.subscribe(DepositCompleted, _handle_deposit_completed)
+    event_bus.subscribe(DepositFailed, _handle_deposit_failed)

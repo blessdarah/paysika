@@ -17,6 +17,8 @@ class Transaction(LedgerBaseMixin, db.Model):
     correlation_id = db.Column(db.String(64), nullable=True)
     description = db.Column(db.String(500), nullable=True)
     metadata_ = db.Column("metadata", db.JSON, nullable=True)
+    provider_reference = db.Column(db.String(255), nullable=True, index=True)
+    provider = db.Column(db.String(50), nullable=True)
 
     entries = db.relationship(
         "LedgerEntry", back_populates="transaction", lazy="select"
