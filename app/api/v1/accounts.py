@@ -2,6 +2,7 @@ from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.api.v1 import v1_bp
+from app.extensions import db
 from app.schemas.account import AccountCreate, AccountResponse, BalanceResponse
 from app.schemas.transaction import TransactionListResponse, TransactionResponse, LedgerEntryResponse
 from app.services import account_service, balance_service, transaction_service
@@ -18,6 +19,7 @@ def create_account(validated_data):
         currency=validated_data.currency,
         name=validated_data.name,
     )
+    db.session.commit()
     return jsonify(AccountResponse.model_validate(account).model_dump(mode="json")), 201
 
 

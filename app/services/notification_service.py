@@ -1,9 +1,32 @@
 import logging
 
+from flask_mail import Message
+
 from app.domain.events import DepositCompleted, TransferCompleted, TransferFailed
+from app.extensions import mail
+from app.models.account import Account
+from app.models.user import User
 from app.services import event_bus
 
 logger = logging.getLogger(__name__)
+
+
+def _get_user_email(account_id: int) -> str | None:
+    account = Account.query.get(account_id)
+    if account is None or account.user is None:
+        return None
+    return account.user.email
+
+
+def _send_email(subject: str, recipients: list[str], body: str) -> None:
+    if not recipients:
+        return
+    msg = Message(subject=subject, recipients=recipients, body=body)
+    try:
+        mail.send(msg)
+        logger.info("Email sent: subject=%r recipients=%s", subject, recipients)
+    except Exception:
+        logger.exception("Failed to send email: subject=%r recipients=%s", subject, recipients)
 
 
 def _handle_transfer_completed(event: TransferCompleted) -> None:
@@ -15,6 +38,19 @@ def _handle_transfer_completed(event: TransferCompleted) -> None:
         event.source_account_id,
         event.target_account_id,
     )
+    source_email = _get_user_email(event.source_account_id)
+    target_email = _get_user_email(event.target_account_id)
+    recipients = [e for e in [source_email, target_email] if e is not None]
+    _send_email(
+        subject=f"Transfer {event.transaction_id} completed",
+        recipients=recipients,
+        body=(
+            f"Transfer {event.transaction_id} has been completed.\n\n"
+            f"Amount: {event.amount} {event.currency}\n"
+            f"From account: {event.source_account_id}\n"
+            f"To account: {event.target_account_id}\n"
+        ),
+    )
 
 
 def _handle_transfer_failed(event: TransferFailed) -> None:
@@ -23,6 +59,19 @@ def _handle_transfer_failed(event: TransferFailed) -> None:
         event.transaction_id,
         event.reason,
     )
+    source_email = _get_user_email(event.source_account_id)
+    if source_email:
+        _send_email(
+            subject=f"Transfer {event.transaction_id} failed",
+            recipients=[source_email],
+            body=(
+                f"Transfer {event.transaction_id} has failed.\n\n"
+                f"Amount: {event.amount} {event.currency}\n"
+                f"From account: {event.source_account_id}\n"
+                f"To account: {event.target_account_id}\n"
+                f"Reason: {event.reason}\n"
+            ),
+        )
 
 
 def _handle_deposit_completed(event: DepositCompleted) -> None:
@@ -33,6 +82,17 @@ def _handle_deposit_completed(event: DepositCompleted) -> None:
         event.currency,
         event.account_id,
     )
+    email = _get_user_email(event.account_id)
+    if email:
+        _send_email(
+            subject=f"Deposit {event.transaction_id} completed",
+            recipients=[email],
+            body=(
+                f"Deposit {event.transaction_id} has been completed.\n\n"
+                f"Amount: {event.amount} {event.currency}\n"
+                f"Account: {event.account_id}\n"
+            ),
+        )
 
 
 def register_handlers() -> None:

@@ -52,8 +52,12 @@ def get_balance(account_id: int, currency: str, use_lock: bool = False) -> Money
     )
 
     if use_lock:
-        # Lock the entries to prevent concurrent modifications
-        query = query.with_for_update()
+        # Lock the matching rows first (FOR UPDATE not allowed on aggregate queries in PostgreSQL)
+        db.session.query(LedgerEntry.id).filter(
+            LedgerEntry.account_id == account_id,
+            LedgerEntry.status == EntryStatus.SUCCESS.value,
+            LedgerEntry.id > last_entry_id,
+        ).with_for_update().all()
 
     delta = query.scalar() or Decimal("0")
     total = snapshot_balance + delta

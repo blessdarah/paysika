@@ -24,6 +24,14 @@ class BaseConfig:
     SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "NGN", "XAF"]
     WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
+    # Mail configuration
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "localhost")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "1025"))
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "false").lower() == "true"
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "noreply@ledger.local")
+
     # Cache configuration
     CACHE_TYPE = "RedisCache"
     CACHE_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -37,6 +45,8 @@ class DevelopmentConfig(BaseConfig):
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL", "sqlite:///dev.db"
     )
+    CACHE_TYPE = os.getenv("CACHE_TYPE", "SimpleCache")
+    MAIL_SUPPRESS_SEND = os.getenv("MAIL_SUPPRESS_SEND", "true").lower() == "true"
 
 
 class TestingConfig(BaseConfig):
@@ -44,6 +54,7 @@ class TestingConfig(BaseConfig):
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=60)
     CACHE_TYPE = "SimpleCache"
+    MAIL_SUPPRESS_SEND = True
 
 
 class ProductionConfig(BaseConfig):
