@@ -13,6 +13,7 @@ from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
 from app.services import account_service, balance_service
+from app.services.fx_provider import get_provider
 from app.domain.money import Money
 from app.utils.exceptions import (
     AccountNotFoundError,
@@ -20,23 +21,29 @@ from app.utils.exceptions import (
     InsufficientFundsError,
 )
 
-# Static exchange rates (in production, use a real FX provider)
-_RATES = {
-    ("USD", "EUR"): Decimal("0.92"),
-    ("EUR", "USD"): Decimal("1.09"),
-    ("USD", "GBP"): Decimal("0.79"),
-    ("GBP", "USD"): Decimal("1.27"),
-    ("EUR", "GBP"): Decimal("0.86"),
-    ("GBP", "EUR"): Decimal("1.16"),
-    ("USD", "NGN"): Decimal("1550.00"),
-    ("NGN", "USD"): Decimal("0.000645"),
-    ("USD", "XAF"): Decimal("605.00"),
-    ("XAF", "USD"): Decimal("0.001653"),
-}
+
+def _lock_accounts(account_ids: list[int]) -> None:
+    for aid in sorted(account_ids):
+        try:
+            db.session.execute(
+                db.select(Account).where(Account.id == aid).with_for_update()
+            )
+        except Exception:
+            pass
 
 
 def _fx_cache_key(source: str, target: str) -> str:
     return f"fx:{source}:{target}"
+
+
+def _get_provider():
+    app = current_app._get_current_object()
+    provider = getattr(app, "_fx_provider", None)
+    if provider is None:
+        name = app.config.get("FX_PROVIDER", "frankfurter")
+        provider = get_provider(name)
+        app._fx_provider = provider
+    return provider
 
 
 def get_exchange_rate(source_currency: str, target_currency: str) -> Decimal:
@@ -47,8 +54,7 @@ def get_exchange_rate(source_currency: str, target_currency: str) -> Decimal:
     if cached is not None:
         return Decimal(cached)
 
-    key = (source_currency, target_currency)
-    rate = _RATES.get(key)
+    rate = _get_provider().fetch_rate(source_currency, target_currency)
     if rate is None:
         raise CurrencyMismatchError(
             f"No exchange rate available for {source_currency} -> {target_currency}"
@@ -93,25 +99,30 @@ def execute_fx_transfer(
     source_account = db.session.get(Account, source_account_id)
     if source_account is None:
         raise AccountNotFoundError(f"Source account {source_account_id} not found")
-    if source_account.currency != source_currency:
-        raise CurrencyMismatchError("Source account currency mismatch")
 
     target_account = db.session.get(Account, target_account_id)
     if target_account is None:
         raise AccountNotFoundError(f"Target account {target_account_id} not found")
-    if target_account.currency != target_currency:
-        raise CurrencyMismatchError("Target account currency mismatch")
-
-    # Check balance
-    balance = balance_service.get_balance(source_account_id, source_currency)
-    if balance < Money(amount, source_currency):
-        raise InsufficientFundsError(
-            f"Insufficient funds: balance={balance.amount}, required={amount}"
-        )
 
     # Get FX pool accounts
     fx_source = account_service.get_or_create_platform_clearing_account(source_currency)
     fx_target = account_service.get_or_create_platform_clearing_account(target_currency)
+
+    # Lock all involved accounts in sorted order to prevent deadlocks
+    _lock_accounts([source_account.id, target_account.id, fx_source.id, fx_target.id])
+
+    # Validate currencies
+    if source_account.currency != source_currency:
+        raise CurrencyMismatchError("Source account currency mismatch")
+    if target_account.currency != target_currency:
+        raise CurrencyMismatchError("Target account currency mismatch")
+
+    # Check balance with lock
+    balance = balance_service.get_balance(source_account_id, source_currency, use_lock=True)
+    if balance < Money(amount, source_currency):
+        raise InsufficientFundsError(
+            f"Insufficient funds: balance={balance.amount}, required={amount}"
+        )
 
     correlation_id = getattr(g, "correlation_id", None) or Transaction.generate_correlation_id()
     txn = Transaction(

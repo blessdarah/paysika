@@ -14,8 +14,12 @@ class Account(BaseMixin, db.Model):
     is_system = db.Column(db.Boolean, nullable=False, default=False)
 
     user = db.relationship("User", back_populates="accounts")
-    ledger_entries = db.relationship("LedgerEntry", back_populates="account", lazy="dynamic")
-    balance_snapshots = db.relationship("BalanceSnapshot", back_populates="account", lazy="dynamic")
+    ledger_entries = db.relationship(
+        "LedgerEntry", back_populates="account", lazy="dynamic"
+    )
+    balance_snapshots = db.relationship(
+        "BalanceSnapshot", back_populates="account", lazy="dynamic"
+    )
 
     def __repr__(self) -> str:
         return f"<Account {self.id} {self.currency} user={self.user_id}>"

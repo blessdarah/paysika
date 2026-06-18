@@ -14,7 +14,9 @@ class Transaction(LedgerBaseMixin, db.Model):
     description = db.Column(db.String(500), nullable=True)
     metadata_ = db.Column("metadata", db.JSON, nullable=True)
 
-    entries = db.relationship("LedgerEntry", back_populates="transaction", lazy="select")
+    entries = db.relationship(
+        "LedgerEntry", back_populates="transaction", lazy="select"
+    )
 
     def __repr__(self) -> str:
         return f"<Transaction {self.id} {self.type} {self.status}>"

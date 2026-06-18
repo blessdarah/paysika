@@ -1,6 +1,6 @@
 .PHONY: help install install-dev run dev db-init db-migrate db-upgrade db-downgrade \
        test test-cov lint clean docker-up docker-down docker-build docker-logs \
-       docker-services shell routes mailhog
+       docker-services shell routes mailhog worker
 
 VENV ?= .venv
 PYTHON ?= $(VENV)/bin/python
@@ -34,7 +34,7 @@ dev: ## Start Docker services, run migrations, and start Flask dev server
 	@if ! ls migrations/versions/*.py >/dev/null 2>&1; then echo "==> Generating initial migration"; CACHE_TYPE=RedisCache $(MAKE) db-migrate msg="initial migration"; fi
 	@echo "==> Applying migrations"
 	CACHE_TYPE=RedisCache $(MAKE) db-upgrade
-	CACHE_TYPE=RedisCache MAIL_SUPPRESS_SEND=false \
+	CACHE_TYPE=RedisCache MAIL_SUPPRESS_SEND=false EMAIL_BACKGROUND=true \
 		$(FLASK) --app 'app:create_app()' run --debug --port 5001
 
 run-gunicorn: ## Run with gunicorn (production-like)
@@ -97,6 +97,9 @@ mailhog: ## Open the MailHog web UI
 
 routes: ## List all registered routes
 	$(FLASK) --app 'app:create_app()' routes
+
+worker: ## Start RQ worker for background email processing
+	$(PYTHON) worker.py
 
 clean: ## Remove caches and compiled files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

@@ -1,11 +1,13 @@
 import logging
 
+from flask import current_app
 from flask_mail import Message
+from rq import Queue
+from redis import Redis
 
 from app.domain.events import DepositCompleted, TransferCompleted, TransferFailed
 from app.extensions import mail
 from app.models.account import Account
-from app.models.user import User
 from app.services import event_bus
 
 logger = logging.getLogger(__name__)
@@ -18,8 +20,19 @@ def _get_user_email(account_id: int) -> str | None:
     return account.user.email
 
 
+def _get_notification_queue() -> Queue:
+    redis_url = current_app.config.get("CACHE_REDIS_URL", "redis://localhost:6379/0")
+    conn = Redis.from_url(redis_url)
+    return Queue("notifications", connection=conn)
+
+
 def _send_email(subject: str, recipients: list[str], body: str) -> None:
     if not recipients:
+        return
+    if current_app.config.get("EMAIL_BACKGROUND", False):
+        queue = _get_notification_queue()
+        queue.enqueue("app.services.email_jobs.send_email", subject, recipients, body)
+        logger.info("Email enqueued: subject=%r recipients=%s", subject, recipients)
         return
     msg = Message(subject=subject, recipients=recipients, body=body)
     try:

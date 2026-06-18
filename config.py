@@ -32,6 +32,12 @@ class BaseConfig:
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "noreply@ledger.local")
 
+    # FX provider configuration
+    FX_PROVIDER = os.getenv("FX_PROVIDER", "frankfurter")
+
+    # Async email configuration
+    EMAIL_BACKGROUND = os.getenv("EMAIL_BACKGROUND", "false").lower() == "true"
+
     # Cache configuration
     CACHE_TYPE = "RedisCache"
     CACHE_REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -55,6 +61,7 @@ class TestingConfig(BaseConfig):
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=60)
     CACHE_TYPE = "SimpleCache"
     MAIL_SUPPRESS_SEND = True
+    FX_PROVIDER = "fallback"
 
 
 class ProductionConfig(BaseConfig):

@@ -1,0 +1,107 @@
+@base_url = http://localhost:5001
+@target_account_id = 2
+
+### Health
+GET {{base_url}}/health
+
+### Register
+POST {{base_url}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "password123"
+}
+
+### Login
+# @name Login
+POST {{base_url}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "alice",
+  "password": "password123"
+}
+
+> {%
+  client.global.set("token", response.body.json.access_token)
+  client.global.set("refresh_token", response.body.json.refresh_token)
+%}
+
+### Refresh
+POST {{base_url}}/api/v1/auth/refresh
+Authorization: Bearer {{refresh_token}}
+
+### Me
+GET {{base_url}}/api/v1/auth/me
+Authorization: Bearer {{token}}
+
+### CreateAccount
+# @name CreateAccount
+POST {{base_url}}/api/v1/accounts
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "currency": "USD",
+  "name": "Checking"
+}
+
+> {%
+  client.global.set("account_id", response.body.json.id)
+%}
+
+### ListAccounts
+GET {{base_url}}/api/v1/accounts
+Authorization: Bearer {{token}}
+
+### Balance
+GET {{base_url}}/api/v1/accounts/{{account_id}}/balance
+Authorization: Bearer {{token}}
+
+### Transactions
+GET {{base_url}}/api/v1/accounts/{{account_id}}/transactions?page=1&per_page=20
+Authorization: Bearer {{token}}
+
+### Deposit
+POST {{base_url}}/api/v1/deposits
+Content-Type: application/json
+Authorization: Bearer {{token}}
+Idempotency-Key: {{$uuid}}
+
+{
+  "account_id": {{account_id}},
+  "amount": "100.00",
+  "currency": "USD",
+  "description": "Test deposit"
+}
+
+### Transfer
+POST {{base_url}}/api/v1/transfers
+Content-Type: application/json
+Authorization: Bearer {{token}}
+Idempotency-Key: {{$uuid}}
+
+{
+  "source_account_id": {{account_id}},
+  "target_account_id": {{target_account_id}},
+  "amount": "25.00",
+  "currency": "USD",
+  "description": "Test transfer"
+}
+
+### Webhook
+POST {{base_url}}/api/v1/payments/webhook
+Content-Type: application/json
+X-Webhook-Signature: <hmac-signature>
+
+{
+  "type": "payment.confirmed",
+  "data": {
+    "account_id": {{account_id}},
+    "amount": "50.00",
+    "currency": "USD",
+    "reference": "ext_payment_001"
+  }
+}

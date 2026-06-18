@@ -16,6 +16,16 @@ from app.services import account_service, balance_service, event_bus
 from app.utils.exceptions import AccountNotFoundError, CurrencyMismatchError
 
 
+def _lock_accounts(account_ids: list[int]) -> None:
+    for aid in sorted(account_ids):
+        try:
+            db.session.execute(
+                db.select(Account).where(Account.id == aid).with_for_update()
+            )
+        except Exception:
+            pass
+
+
 def execute_deposit(
     account_id: int,
     amount: Decimal,
@@ -45,6 +55,9 @@ def execute_deposit(
 
     # Get or create the platform clearing account
     clearing_account = account_service.get_or_create_platform_clearing_account(currency)
+
+    # Lock both accounts to prevent concurrent races
+    _lock_accounts([account.id, clearing_account.id])
 
     # Create the transaction
     correlation_id = getattr(g, "correlation_id", None) or Transaction.generate_correlation_id()
