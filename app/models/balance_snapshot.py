@@ -5,6 +5,10 @@ from app.models.base import LedgerBaseMixin
 class BalanceSnapshot(LedgerBaseMixin, db.Model):
     __tablename__ = "balance_snapshots"
 
+    __table_args__ = (
+        db.Index("ix_balance_snapshot_account_id_desc", "account_id", db.text("id DESC")),
+    )
+
     account_id = db.Column(
         db.Integer, db.ForeignKey("accounts.id"), nullable=False, index=True
     )

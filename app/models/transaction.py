@@ -9,6 +9,13 @@ class Transaction(LedgerBaseMixin, db.Model):
 
     __table_args__ = (
         db.Index("ix_txn_status_created", "status", "created_at"),
+        db.Index(
+            "ix_txn_type_status_ref_created",
+            "type",
+            "status",
+            "provider_reference",
+            "created_at",
+        ),
     )
 
     type = db.Column(db.String(20), nullable=False)

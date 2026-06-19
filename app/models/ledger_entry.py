@@ -12,6 +12,7 @@ class LedgerEntry(LedgerBaseMixin, db.Model):
             "account_id",
             db.text("created_at DESC"),
         ),
+        db.Index("ix_ledger_account_transaction", "account_id", "transaction_id"),
     )
 
     account_id = db.Column(
