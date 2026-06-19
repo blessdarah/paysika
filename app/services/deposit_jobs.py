@@ -16,14 +16,9 @@ def init(app):
 
 
 def _get_deposit_queue():
-    from rq import Queue
-    from redis import Redis
-
     if _app is None:
         return None
-    redis_url = _app.config.get("CACHE_REDIS_URL", "redis://localhost:6379/0")
-    conn = Redis.from_url(redis_url)
-    return Queue("deposits", connection=conn)
+    return _app.extensions["deposit_queue"]
 
 
 def _notify_provider(

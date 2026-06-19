@@ -12,12 +12,7 @@ from app.utils.exceptions import ForbiddenError
 
 
 def _get_deposit_queue():
-    from rq import Queue
-    from redis import Redis
-
-    redis_url = current_app.config.get("CACHE_REDIS_URL", "redis://localhost:6379/0")
-    conn = Redis.from_url(redis_url)
-    return Queue("deposits", connection=conn)
+    return current_app.extensions["deposit_queue"]
 
 
 @v1_bp.route("/deposits", methods=["POST"])

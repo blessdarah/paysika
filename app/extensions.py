@@ -14,3 +14,6 @@ cors = CORS()
 cache = Cache()
 mail = Mail()
 limiter = Limiter(key_func=get_remote_address)
+
+deposit_queue = None
+notification_queue = None

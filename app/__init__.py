@@ -30,6 +30,15 @@ def create_app(config_name: str = "default") -> Flask:
     mail.init_app(app)
     limiter.init_app(app)
 
+    # Create shared RQ queues (single Redis connection, reused across requests)
+    from redis import Redis
+    from rq import Queue
+
+    redis_url = app.config.get("CACHE_REDIS_URL", "redis://localhost:6379/0")
+    _redis_conn = Redis.from_url(redis_url)
+    app.extensions["deposit_queue"] = Queue("deposits", connection=_redis_conn)
+    app.extensions["notification_queue"] = Queue("notifications", connection=_redis_conn)
+
     # JWT error handlers
     @jwt.expired_token_loader
     def expired_token_callback(jwt_header, jwt_payload):

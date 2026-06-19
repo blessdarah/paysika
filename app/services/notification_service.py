@@ -1,8 +1,7 @@
 import logging
 
 from flask import current_app
-from redis import Redis
-from rq import Queue, Retry
+from rq import Retry
 
 from app.domain.events import (
     DepositCompleted,
@@ -24,10 +23,8 @@ def _get_user_email(account_id: int) -> str | None:
     return account.user.email
 
 
-def _get_notification_queue() -> Queue:
-    redis_url = current_app.config.get("CACHE_REDIS_URL", "redis://localhost:6379/0")
-    conn = Redis.from_url(redis_url)
-    return Queue("notifications", connection=conn)
+def _get_notification_queue():
+    return current_app.extensions["notification_queue"]
 
 
 def _send_email(subject: str, recipients: list[str], body: str) -> None:
