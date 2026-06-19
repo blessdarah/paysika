@@ -14,14 +14,16 @@ def _balance_cache_key(account_id: int) -> str:
     return f"balance:{account_id}"
 
 
-def get_balance(account_id: int, currency: str, use_lock: bool = False) -> Money:
+def get_balance(
+    account_id: int, currency: str, use_lock: bool = False, force: bool = False
+) -> Money:
     """Compute account balance from ledger entries using snapshot optimization.
 
     If use_lock=True, uses SELECT FOR UPDATE on the entries to prevent
     concurrent reads during transfers (pessimistic locking).
-    Cache is only used when use_lock=False (read-only path).
+    Cache is only used when use_lock=False and force=False.
     """
-    if not use_lock:
+    if not use_lock and not force:
         cached = cache.get(_balance_cache_key(account_id))
         if cached is not None:
             return Money(Decimal(cached["amount"]), cached["currency"])
@@ -70,6 +72,14 @@ def get_balance(account_id: int, currency: str, use_lock: bool = False) -> Money
             {"amount": str(result.amount), "currency": currency},
             timeout=ttl,
         )
+    elif force:
+        # Write-through: when called via refresh_balance_cache, cache the result
+        ttl = current_app.config.get("BALANCE_CACHE_TTL", 300)
+        cache.set(
+            _balance_cache_key(account_id),
+            {"amount": str(result.amount), "currency": currency},
+            timeout=ttl,
+        )
 
     return result
 
@@ -80,9 +90,8 @@ def invalidate_balance_cache(account_id: int) -> None:
 
 
 def refresh_balance_cache(account_id: int, currency: str) -> None:
-    """Delete cache then immediately recompute and store the balance (write-through)."""
-    cache.delete(_balance_cache_key(account_id))
-    get_balance(account_id, currency)
+    """Recompute and write-through to cache (no delete, avoids thundering herd)."""
+    get_balance(account_id, currency, force=True)
 
 
 def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
