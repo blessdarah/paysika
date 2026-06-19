@@ -38,6 +38,7 @@ def create_app(config_name: str = "default") -> Flask:
     _redis_conn = Redis.from_url(redis_url)
     app.extensions["deposit_queue"] = Queue("deposits", connection=_redis_conn)
     app.extensions["notification_queue"] = Queue("notifications", connection=_redis_conn)
+    app.extensions["balance_queue"] = Queue("balance", connection=_redis_conn)
 
     # JWT error handlers
     @jwt.expired_token_loader

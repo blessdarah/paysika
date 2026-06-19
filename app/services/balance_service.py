@@ -179,7 +179,7 @@ def maybe_create_snapshot(account_id: int) -> None:
 
     if entry_count >= threshold:
         try:
-            queue = current_app.extensions["deposit_queue"]
+            queue = current_app.extensions["balance_queue"]
             queue.enqueue(
                 "app.services.balance_jobs.create_snapshot",
                 account_id,

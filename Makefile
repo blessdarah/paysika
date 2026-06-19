@@ -104,8 +104,17 @@ mailhog: ## Open the MailHog web UI
 routes: ## List all registered routes
 	$(FLASK) --app 'app:create_app()' routes
 
-worker: ## Start RQ worker for background email processing
+worker: ## Start RQ worker for all queues
 	$(PYTHON) worker.py
+
+worker-deposits: ## Start RQ worker for deposits queue only
+	$(PYTHON) worker.py --queue deposits
+
+worker-notifications: ## Start RQ worker for notifications queue only
+	$(PYTHON) worker.py --queue notifications
+
+worker-balance: ## Start RQ worker for balance snapshots queue only
+	$(PYTHON) worker.py --queue balance
 
 clean: ## Remove caches and compiled files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
