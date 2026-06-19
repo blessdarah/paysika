@@ -14,7 +14,7 @@ class BaseConfig:
         "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "10")),
         "pool_pre_ping": os.getenv("DB_POOL_PRE_PING", "true").lower() == "true",
         "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "300")),
-        "connect_args": {"options": "-c statement_timeout=30000"},
+        "connect_args": {"options": f"-c statement_timeout={os.getenv('DB_STATEMENT_TIMEOUT', '30000')}"},
     }
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH", str(1 * 1024 * 1024)))
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "jwt-change-me-to-32-bytes-too-mkay")
