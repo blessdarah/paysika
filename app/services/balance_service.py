@@ -94,8 +94,8 @@ def refresh_balance_cache(account_id: int, currency: str) -> None:
     get_balance(account_id, currency, force=True)
 
 
-def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
-    """Create a balance snapshot if the number of entries since last snapshot exceeds threshold."""
+def _compute_and_create_snapshot(account_id: int) -> BalanceSnapshot | None:
+    """Execute the full snapshot computation and creation (runs in RQ worker)."""
     threshold = current_app.config.get("LEDGER_SNAPSHOT_THRESHOLD", 100)
 
     latest_snapshot = (
@@ -108,7 +108,6 @@ def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
     last_entry_id = latest_snapshot.last_entry_id if latest_snapshot else 0
     last_entry_id = last_entry_id or 0
 
-    # Count entries since last snapshot
     entry_count = (
         LedgerEntry.query
         .filter(
@@ -122,7 +121,6 @@ def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
     if entry_count < threshold:
         return None
 
-    # Get the latest entry id
     latest_entry = (
         LedgerEntry.query
         .filter(
@@ -136,7 +134,6 @@ def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
     if not latest_entry:
         return None
 
-    # Compute full balance
     total_balance = (
         db.session.query(func.coalesce(func.sum(LedgerEntry.amount), Decimal("0")))
         .filter(
@@ -154,3 +151,40 @@ def maybe_create_snapshot(account_id: int) -> BalanceSnapshot | None:
     )
     db.session.add(snapshot)
     return snapshot
+
+
+def maybe_create_snapshot(account_id: int) -> None:
+    """Lightweight check: enqueue a background snapshot job if threshold exceeded."""
+    threshold = current_app.config.get("LEDGER_SNAPSHOT_THRESHOLD", 100)
+
+    latest_snapshot = (
+        BalanceSnapshot.query
+        .filter_by(account_id=account_id)
+        .order_by(BalanceSnapshot.id.desc())
+        .first()
+    )
+
+    last_entry_id = latest_snapshot.last_entry_id if latest_snapshot else 0
+    last_entry_id = last_entry_id or 0
+
+    entry_count = (
+        LedgerEntry.query
+        .filter(
+            LedgerEntry.account_id == account_id,
+            LedgerEntry.status == EntryStatus.SUCCESS.value,
+            LedgerEntry.id > last_entry_id,
+        )
+        .count()
+    )
+
+    if entry_count >= threshold:
+        try:
+            queue = current_app.extensions["deposit_queue"]
+            queue.enqueue(
+                "app.services.balance_jobs.create_snapshot",
+                account_id,
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Failed to enqueue snapshot job for account %s", account_id,
+            )

@@ -94,23 +94,22 @@ class TestSnapshotOptimization:
         balance = balance_service.get_balance(account_id, "USD")
         assert balance == Money("150.0000", Currency.USD)
 
-    def test_maybe_create_snapshot_below_threshold(self, app, user_with_account):
+    def test_compute_and_create_snapshot_below_threshold(self, app, user_with_account):
         app.config["LEDGER_SNAPSHOT_THRESHOLD"] = 5
         account_id = user_with_account["account_id"]
-        # Create 3 entries (below threshold of 5)
         for i in range(3):
             _create_entry(account_id, "10.0000", EntryType.CREDIT.value)
 
-        result = balance_service.maybe_create_snapshot(account_id)
+        result = balance_service._compute_and_create_snapshot(account_id)
         assert result is None
 
-    def test_maybe_create_snapshot_at_threshold(self, app, user_with_account):
+    def test_compute_and_create_snapshot_at_threshold(self, app, user_with_account):
         app.config["LEDGER_SNAPSHOT_THRESHOLD"] = 3
         account_id = user_with_account["account_id"]
         for i in range(3):
             _create_entry(account_id, "10.0000", EntryType.CREDIT.value)
 
-        result = balance_service.maybe_create_snapshot(account_id)
+        result = balance_service._compute_and_create_snapshot(account_id)
         assert result is not None
         assert result.balance == Decimal("30.0000")
         assert result.account_id == account_id
