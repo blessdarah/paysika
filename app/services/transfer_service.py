@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from flask import g
+from sqlalchemy import exc as sa_exc
 
 from app.domain.enums import (
     EntryStatus,
@@ -15,6 +16,7 @@ from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
 from app.services import balance_service, event_bus
+from app.services.lock import lock_accounts
 from app.utils.exceptions import AccountNotFoundError, CurrencyMismatchError, InsufficientFundsError
 
 
@@ -44,23 +46,14 @@ def execute_transfer(
             return existing
 
     # Lock accounts in sorted order to prevent deadlocks
-    sorted_ids = sorted([source_account_id, target_account_id])
-    accounts = {}
-    for aid in sorted_ids:
-        account = db.session.get(Account, aid)
-        if account is None:
-            raise AccountNotFoundError(f"Account {aid} not found")
-        # SELECT FOR UPDATE for real databases (no-op on SQLite)
-        try:
-            db.session.execute(
-                db.select(Account).where(Account.id == aid).with_for_update()
-            )
-        except Exception:
-            pass  # SQLite doesn't support FOR UPDATE
-        accounts[aid] = account
+    lock_accounts([source_account_id, target_account_id])
 
-    source = accounts[source_account_id]
-    target = accounts[target_account_id]
+    source = db.session.get(Account, source_account_id)
+    if source is None:
+        raise AccountNotFoundError(f"Account {source_account_id} not found")
+    target = db.session.get(Account, target_account_id)
+    if target is None:
+        raise AccountNotFoundError(f"Account {target_account_id} not found")
 
     # Validate currencies
     if source.currency != currency:
@@ -93,7 +86,17 @@ def execute_transfer(
         description=description,
     )
     db.session.add(txn)
-    db.session.flush()
+
+    if idempotency_key:
+        try:
+            with db.session.begin_nested():
+                db.session.flush()
+        except sa_exc.IntegrityError:
+            return Transaction.query.filter_by(
+                idempotency_key=idempotency_key
+            ).one()
+    else:
+        db.session.flush()
 
     # Debit source (negative amount)
     debit_entry = LedgerEntry(

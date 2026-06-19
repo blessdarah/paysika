@@ -208,10 +208,11 @@ paths:
       tags: [Deposits]
       summary: Initiate a two-phase deposit
       description: |
-        Creates a PENDING transaction and notifies the payment provider.
-        The provider will call `POST /payments/webhook` to complete or fail
-        the deposit asynchronously.  This endpoint is idempotent — provide
-        an `Idempotency-Key` header to safely retry.
+        Creates a PENDING transaction and enqueues an RQ job to notify
+        the payment provider asynchronously.  The provider will call
+        `POST /payments/webhook` to complete or fail the deposit.
+        This endpoint is idempotent — provide an `Idempotency-Key`
+        header to safely retry.
       security:
         - BearerAuth: []
       parameters:
@@ -533,7 +534,10 @@ components:
           type: string
         provider_payment_id:
           type: string
-          description: Reference from the payment provider (empty if unreachable)
+          description: >
+            Always empty on the initial response.  The provider is notified
+            asynchronously via an RQ job; the reference will be stored on the
+            transaction when the job completes.
 
     # ─────────────────────────── Transfers ──────────────────────────────
     TransferRequest:

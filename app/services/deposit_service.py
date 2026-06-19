@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from flask import g
+from sqlalchemy import exc as sa_exc
 
 from app.domain.enums import (
     EntryStatus,
@@ -10,21 +11,11 @@ from app.domain.enums import (
 )
 from app.domain.events import DepositCompleted, DepositFailed, DepositInitiated
 from app.extensions import db
-from app.models.account import Account
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
 from app.services import account_service, balance_service, event_bus
+from app.services.lock import lock_accounts
 from app.utils.exceptions import CurrencyMismatchError, InvalidTransactionStateError
-
-
-def _lock_accounts(account_ids: list[int]) -> None:
-    for aid in sorted(account_ids):
-        try:
-            db.session.execute(
-                db.select(Account).where(Account.id == aid).with_for_update()
-            )
-        except Exception:
-            pass
 
 
 def _build_correlation_id() -> str:
@@ -72,7 +63,17 @@ def initiate_deposit(
         },
     )
     db.session.add(txn)
-    db.session.flush()
+
+    if idempotency_key:
+        try:
+            with db.session.begin_nested():
+                db.session.flush()
+        except sa_exc.IntegrityError:
+            return Transaction.query.filter_by(
+                idempotency_key=idempotency_key
+            ).one()
+    else:
+        db.session.flush()
 
     event_bus.publish(DepositInitiated(
         transaction_id=txn.id,
@@ -110,7 +111,7 @@ def confirm_deposit(
     account = account_service.get_account(account_id)
     clearing_account = account_service.get_or_create_platform_clearing_account(currency)
 
-    _lock_accounts([account.id, clearing_account.id])
+    lock_accounts([account.id, clearing_account.id])
 
     debit_entry = LedgerEntry(
         account_id=clearing_account.id,
@@ -210,7 +211,7 @@ def execute_deposit(
 
     clearing_account = account_service.get_or_create_platform_clearing_account(currency)
 
-    _lock_accounts([account.id, clearing_account.id])
+    lock_accounts([account.id, clearing_account.id])
 
     correlation_id = _build_correlation_id()
     txn = Transaction(
@@ -221,7 +222,17 @@ def execute_deposit(
         description=description or f"Deposit {amount} {currency}",
     )
     db.session.add(txn)
-    db.session.flush()
+
+    if idempotency_key:
+        try:
+            with db.session.begin_nested():
+                db.session.flush()
+        except sa_exc.IntegrityError:
+            return Transaction.query.filter_by(
+                idempotency_key=idempotency_key
+            ).one()
+    else:
+        db.session.flush()
 
     debit_entry = LedgerEntry(
         account_id=clearing_account.id,

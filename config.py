@@ -52,7 +52,6 @@ class BaseConfig:
     FX_PROVIDER = os.getenv("FX_PROVIDER", "frankfurter")
 
     # Async email configuration
-    EMAIL_BACKGROUND = os.getenv("EMAIL_BACKGROUND", "false").lower() == "true"
     EMAIL_RETRY_MAX = int(os.getenv("EMAIL_RETRY_MAX", "3"))
     EMAIL_RETRY_INTERVALS = os.getenv("EMAIL_RETRY_INTERVALS", "60,300,3600")
 

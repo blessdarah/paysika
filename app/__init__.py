@@ -1,6 +1,6 @@
-import click
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
+import click
 from flask import Flask, jsonify
 
 from app.api import register_blueprints
@@ -64,12 +64,12 @@ def create_app(config_name: str = "default") -> Flask:
 
     # Import models so Alembic detects them
     from app.models import (  # noqa: F401
-        User,
         Account,
-        Transaction,
-        LedgerEntry,
         BalanceSnapshot,
         IdempotencyRecord,
+        LedgerEntry,
+        Transaction,
+        User,
     )
 
     @app.route("/health")
@@ -85,7 +85,6 @@ def create_app(config_name: str = "default") -> Flask:
     @click.option("--hours", default=72, help="Delete records older than N hours")
     def cleanup_idempotency(hours):
         """Delete old IdempotencyRecord rows."""
-        from app.models.idempotency_record import IdempotencyRecord
 
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
         deleted = IdempotencyRecord.query.filter(
@@ -93,5 +92,20 @@ def create_app(config_name: str = "default") -> Flask:
         ).delete()
         db.session.commit()
         click.echo(f"Deleted {deleted} idempotency records older than {hours} hours")
+
+    @app.cli.command("recover-orphan-deposits")
+    @click.option(
+        "--delay-minutes", default=30, show_default=True,
+        help="Age threshold (minutes) to consider a PENDING deposit orphaned",
+    )
+    def recover_orphan_deposits(delay_minutes):
+        """Re-enqueue provider notification for PENDING deposits that were
+        never acknowledged by the payment provider."""
+        from app.services.deposit_jobs import init as init_deposit_jobs
+        from app.services.deposit_jobs import recover_orphan_deposits as _recover
+
+        init_deposit_jobs(app)
+        count = _recover(delay_minutes=delay_minutes)
+        click.echo(f"Re-enqueued {count} orphaned deposit(s)")
 
     return app

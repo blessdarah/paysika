@@ -4,7 +4,11 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from app.api.v1 import v1_bp
 from app.extensions import db, limiter
 from app.schemas.account import AccountCreate, AccountResponse, BalanceResponse
-from app.schemas.transaction import TransactionListResponse, TransactionResponse, LedgerEntryResponse
+from app.schemas.transaction import (
+    LedgerEntryResponse,
+    TransactionListResponse,
+    TransactionResponse,
+)
 from app.services import account_service, balance_service, transaction_service
 from app.utils.decorators import validate_request
 
@@ -30,10 +34,9 @@ def create_account(validated_data):
 def list_accounts():
     user_id = int(get_jwt_identity())
     accounts = account_service.get_user_accounts(user_id)
-    return jsonify([
-        AccountResponse.model_validate(a).model_dump(mode="json")
-        for a in accounts
-    ]), 200
+    return jsonify(
+        [AccountResponse.model_validate(a).model_dump(mode="json") for a in accounts]
+    ), 200
 
 
 @v1_bp.route("/accounts/<int:account_id>/balance", methods=["GET"])
@@ -46,11 +49,13 @@ def get_balance(account_id):
         return jsonify({"error": "Forbidden"}), 403
 
     balance = balance_service.get_balance(account_id, account.currency)
-    return jsonify(BalanceResponse(
-        account_id=account_id,
-        currency=account.currency,
-        balance=str(balance.amount),
-    ).model_dump()), 200
+    return jsonify(
+        BalanceResponse(
+            account_id=account_id,
+            currency=account.currency,
+            balance=str(balance.amount),
+        ).model_dump()
+    ), 200
 
 
 @v1_bp.route("/accounts/<int:account_id>/transactions", methods=["GET"])
@@ -85,20 +90,24 @@ def get_account_transactions(account_id):
             ).model_dump(mode="json")
             for e in txn.entries
         ]
-        transactions.append(TransactionResponse(
-            id=txn.id,
-            type=txn.type,
-            status=txn.status,
-            description=txn.description,
-            correlation_id=txn.correlation_id,
-            created_at=txn.created_at,
-            entries=entries,
-        ).model_dump(mode="json"))
+        transactions.append(
+            TransactionResponse(
+                id=txn.id,
+                type=txn.type,
+                status=txn.status,
+                description=txn.description,
+                correlation_id=txn.correlation_id,
+                created_at=txn.created_at,
+                entries=entries,
+            ).model_dump(mode="json")
+        )
 
-    return jsonify(TransactionListResponse(
-        transactions=transactions,
-        total=result["total"],
-        page=result["page"],
-        per_page=result["per_page"],
-        pages=result["pages"],
-    ).model_dump(mode="json")), 200
+    return jsonify(
+        TransactionListResponse(
+            transactions=transactions,
+            total=result["total"],
+            page=result["page"],
+            per_page=result["per_page"],
+            pages=result["pages"],
+        ).model_dump(mode="json")
+    ), 200

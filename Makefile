@@ -34,7 +34,7 @@ dev: ## Start Docker services, run migrations, and start Flask dev server
 	@if ! ls migrations/versions/*.py >/dev/null 2>&1; then echo "==> Generating initial migration"; CACHE_TYPE=RedisCache $(MAKE) db-migrate msg="initial migration"; fi
 	@echo "==> Applying migrations"
 	CACHE_TYPE=RedisCache $(MAKE) db-upgrade
-	CACHE_TYPE=RedisCache MAIL_SUPPRESS_SEND=false EMAIL_BACKGROUND=true \
+	CACHE_TYPE=RedisCache MAIL_SUPPRESS_SEND=false \
 		$(FLASK) --app 'app:create_app()' run --debug --port 5001
 
 run-gunicorn: ## Run with gunicorn (production-like)

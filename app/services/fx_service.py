@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from flask import current_app, g
+from sqlalchemy import exc as sa_exc
 
 from app.domain.enums import (
     EntryStatus,
@@ -14,22 +15,13 @@ from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
 from app.services import account_service, balance_service
 from app.services.fx_provider import get_provider
+from app.services.lock import lock_accounts
 from app.domain.money import Money
 from app.utils.exceptions import (
     AccountNotFoundError,
     CurrencyMismatchError,
     InsufficientFundsError,
 )
-
-
-def _lock_accounts(account_ids: list[int]) -> None:
-    for aid in sorted(account_ids):
-        try:
-            db.session.execute(
-                db.select(Account).where(Account.id == aid).with_for_update()
-            )
-        except Exception:
-            pass
 
 
 def _fx_cache_key(source: str, target: str) -> str:
@@ -109,7 +101,7 @@ def execute_fx_transfer(
     fx_target = account_service.get_or_create_platform_clearing_account(target_currency)
 
     # Lock all involved accounts in sorted order to prevent deadlocks
-    _lock_accounts([source_account.id, target_account.id, fx_source.id, fx_target.id])
+    lock_accounts([source_account.id, target_account.id, fx_source.id, fx_target.id])
 
     # Validate currencies
     if source_account.currency != source_currency:
@@ -137,7 +129,17 @@ def execute_fx_transfer(
         metadata_={"exchange_rate": str(rate)},
     )
     db.session.add(txn)
-    db.session.flush()
+
+    if idempotency_key:
+        try:
+            with db.session.begin_nested():
+                db.session.flush()
+        except sa_exc.IntegrityError:
+            return Transaction.query.filter_by(
+                idempotency_key=idempotency_key
+            ).one()
+    else:
+        db.session.flush()
 
     # Entry 1: Debit sender in source currency
     db.session.add(LedgerEntry(

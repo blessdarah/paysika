@@ -1,7 +1,5 @@
-import os
 from decimal import Decimal
 
-import requests
 from flask import current_app, jsonify
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
@@ -11,6 +9,15 @@ from app.schemas.deposit import DepositInitiateRequest, DepositInitiateResponse
 from app.services import account_service, deposit_service
 from app.utils.decorators import require_idempotency_key, validate_request
 from app.utils.exceptions import ForbiddenError
+
+
+def _get_deposit_queue():
+    from rq import Queue
+    from redis import Redis
+
+    redis_url = current_app.config.get("CACHE_REDIS_URL", "redis://localhost:6379/0")
+    conn = Redis.from_url(redis_url)
+    return Queue("deposits", connection=conn)
 
 
 @v1_bp.route("/deposits", methods=["POST"])
@@ -31,38 +38,25 @@ def create_deposit(validated_data):
         description=validated_data.description,
         provider="mock",
     )
-    db.session.flush()
-
-    provider_payment_url = ""
-    try:
-        provider_url = current_app.config.get(
-            "MOCK_PROVIDER_URL",
-            os.getenv("MOCK_PROVIDER_URL", "http://localhost:8090"),
-        )
-        resp = requests.post(
-            f"{provider_url}/create-payment",
-            json={
-                "reference_id": str(txn.id),
-                "amount": str(validated_data.amount),
-                "currency": validated_data.currency,
-            },
-            timeout=5,
-        )
-        if resp.ok:
-            provider_data = resp.json()
-            provider_payment_url = provider_data.get("payment_id", "")
-            current_app.logger.info(
-                "Mock provider initiated: transaction=%s payment=%s",
-                txn.id, provider_payment_url,
-            )
-        else:
-            current_app.logger.warning(
-                "Mock provider returned %s: %s", resp.status_code, resp.text,
-            )
-    except requests.RequestException as e:
-        current_app.logger.warning("Mock provider unreachable: %s", e)
-
     db.session.commit()
+
+    # Notify the payment provider asynchronously — the request returns
+    # immediately and the RQ worker posts to the provider outside the
+    # HTTP request/response cycle.
+    try:
+        queue = _get_deposit_queue()
+        from app.services.deposit_jobs import notify_provider
+
+        queue.enqueue(
+            notify_provider,
+            txn.id,
+            str(validated_data.amount),
+            validated_data.currency,
+        )
+    except Exception:
+        current_app.logger.exception(
+            "Failed to enqueue provider notification for transaction=%s", txn.id,
+        )
 
     return (
         jsonify(
@@ -72,7 +66,7 @@ def create_deposit(validated_data):
                 account_id=validated_data.account_id,
                 amount=validated_data.amount,
                 currency=validated_data.currency,
-                provider_payment_id=provider_payment_url,
+                provider_payment_id="",
             ).model_dump(mode="json")
         ),
         202,

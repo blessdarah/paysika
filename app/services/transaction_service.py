@@ -1,3 +1,5 @@
+from sqlalchemy.orm import joinedload
+
 from app.extensions import db
 from app.models.ledger_entry import LedgerEntry
 from app.models.transaction import Transaction
@@ -26,6 +28,7 @@ def get_account_transactions(
     query = (
         Transaction.query
         .filter(Transaction.id.in_(db.select(subq.c.transaction_id)))
+        .options(joinedload(Transaction.entries))
         .order_by(Transaction.created_at.desc())
     )
 

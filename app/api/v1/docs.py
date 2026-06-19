@@ -1,6 +1,6 @@
 import os
 
-from flask import jsonify, send_from_directory
+from flask import send_from_directory
 
 
 def register_docs_routes(app):

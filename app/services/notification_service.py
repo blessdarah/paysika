@@ -1,12 +1,16 @@
 import logging
 
 from flask import current_app
-from flask_mail import Message
-from rq import Queue, Retry
 from redis import Redis
+from rq import Queue, Retry
 
-from app.domain.events import DepositCompleted, DepositFailed, DepositInitiated, TransferCompleted, TransferFailed
-from app.extensions import db, mail
+from app.domain.events import (
+    DepositCompleted,
+    DepositFailed,
+    TransferCompleted,
+    TransferFailed,
+)
+from app.extensions import db
 from app.models.account import Account
 from app.services import event_bus
 
@@ -29,27 +33,22 @@ def _get_notification_queue() -> Queue:
 def _send_email(subject: str, recipients: list[str], body: str) -> None:
     if not recipients:
         return
-    if current_app.config.get("EMAIL_BACKGROUND", False):
-        queue = _get_notification_queue()
-        retry_max = current_app.config.get("EMAIL_RETRY_MAX", 3)
-        retry_intervals = [
-            int(s) for s in current_app.config.get("EMAIL_RETRY_INTERVALS", "60,300,3600").split(",")
-        ]
-        queue.enqueue(
-            "app.services.email_jobs.send_email",
-            subject,
-            recipients,
-            body,
-            retry=Retry(max=retry_max, interval=retry_intervals),
-        )
-        logger.info("Email enqueued: subject=%r recipients=%s", subject, recipients)
-        return
-    msg = Message(subject=subject, recipients=recipients, body=body)
-    try:
-        mail.send(msg)
-        logger.info("Email sent: subject=%r recipients=%s", subject, recipients)
-    except Exception:
-        logger.exception("Failed to send email: subject=%r recipients=%s", subject, recipients)
+    queue = _get_notification_queue()
+    retry_max = current_app.config.get("EMAIL_RETRY_MAX", 3)
+    retry_intervals = [
+        int(s)
+        for s in current_app.config.get(
+            "EMAIL_RETRY_INTERVALS", "60,300,3600"
+        ).split(",")
+    ]
+    queue.enqueue(
+        "app.services.email_jobs.send_email",
+        subject,
+        recipients,
+        body,
+        retry=Retry(max=retry_max, interval=retry_intervals),
+    )
+    logger.info("Email enqueued: subject=%r recipients=%s", subject, recipients)
 
 
 def _handle_transfer_completed(event: TransferCompleted) -> None:
